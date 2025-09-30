@@ -1,0 +1,109 @@
+* { box-sizing: border-box; }
+
+:root { color-scheme: light; } 
+
+html, body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: #f6f8fb;
+  color: #222;
+}
+
+.container { max-width: 980px; }
+
+/* Navbar / Brand */
+nav.blue { background: #1976d2 !important; }
+nav .brand-logo {
+  font-weight: 700;
+  font-size: 1.25rem;
+  white-space: nowrap;
+  left: 12px !important;
+  transform: none !important;
+}
+@media (min-width: 601px) { nav .brand-logo { font-size: 1.35rem; } }
+
+#nav-mobile > li > a { font-weight: 500; opacity: .95; }
+
+/* Tabs */
+.tabs {
+  position: sticky;
+  top: 56px;
+  z-index: 2;
+  background: #fff;
+  border-bottom: 1px solid rgba(0,0,0,.06);
+  margin-bottom: .75rem;
+}
+.tabs .tab a {
+  color: #1976d2;
+  letter-spacing: 0;
+  font-weight: 600;
+  padding: 0 12px;
+}
+.tabs .tab a.active { color: #1976d2; }
+.tabs .indicator { background: #1976d2; }
+
+/* Layout spacing */
+main.container { margin-top: 1rem; }
+.section { padding-top: .75rem; padding-bottom: .75rem; }
+
+/* Cards */
+.card {
+  background: #fff;
+  color: #222;
+  border-radius: 12px;
+  box-shadow: 0 8px 20px rgba(0,0,0,.08);
+}
+.card .card-title { font-weight: 700; font-size: 1.1rem; }
+
+/* Helper text */
+.small-muted { font-size: .9rem; color: #6d6d6d; }
+
+/* Buttons */
+.btn, .btn-small { text-transform: none; border-radius: 12px; }
+.btn-small { height: 36px; line-height: 36px; padding: 0 14px; }
+
+/* FAB */
+.btn-floating.btn-large {
+  position: fixed;
+  right: 20px;
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 12px 24px rgba(25,118,210,.35);
+}
+
+/* Due badges */
+.badge.due  { background: #e53935 !important; }
+.badge.soon { background: #fb8c00 !important; }
+.badge.ok   { background: #43a047 !important; }
+
+/* Inputs */
+.input-field input[type=text],
+.input-field input[type=number],
+.input-field input[type=date],
+.input-field input[type=datetime-local] { margin-bottom: 8px; }
+.input-field label { color: #6d6d6d; }
+input:focus {
+  border-bottom: 1px solid #1976d2 !important;
+  box-shadow: 0 1px 0 0 #1976d2 !important;
+}
+.input-field input:focus + label { color: #1976d2 !important; }
+
+/* Modals — force readable light modal even in dark OS */
+.modal {
+  background: #ffffff !important;
+  color: #222 !important;
+  border-radius: 16px;
+}
+.modal .modal-content h4 { color: #222 !important; }
+.modal .modal-content p,
+.modal .modal-content li,
+.modal .modal-footer a { color: #333 !important; }
+.modal .modal-footer { border-top: 1px solid rgba(0,0,0,.08); }
+
+/* Placeholder empty state */
+.empty-state { color: #8a8a8a; text-align: center; padding: 2rem 1rem; }
+
+/* Mobile tweaks */
+@media (max-width: 400px) {
+  .tabs .tab a { font-size: .82rem; padding: 0 8px; }
+  .card .card-title { font-size: 1.05rem; }
+}

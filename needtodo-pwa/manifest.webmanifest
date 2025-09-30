@@ -1,0 +1,8 @@
+{
+  "name": "NeedToDo",
+  "short_name": "NeedToDo",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#fafafa",
+  "theme_color": "#1976d2"
+}
