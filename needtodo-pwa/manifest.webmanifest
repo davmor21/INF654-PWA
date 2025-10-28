@@ -1,8 +1,22 @@
 {
   "name": "NeedToDo",
   "short_name": "NeedToDo",
-  "start_url": "/index.html",
+  "description": "A simple PWA prototype for tasks/habits/homework with offline caching and installability.",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#fafafa",
-  "theme_color": "#1976d2"
+  "theme_color": "#1976d2",
+  "icons": [
+    {
+      "src": "img/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "img/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
 }

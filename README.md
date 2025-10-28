@@ -28,7 +28,26 @@ This project organizes daily habits, homework assignments, and home care tasks i
       python -m http.server 5173
       ```
 
-## Notes
-- This is a **prototype** for class, not a production app.
-- Data is stored locally in the browser (IndexedDB).
-- Future improvements: Google Sign-In, shared workspaces, advanced grade tracking.
+<br><br><br>
+## Due 10/27/2025:
+
+# NeedToDo PWA (INF654 Assignment)
+
+This prototype demonstrates **Progressive Web App** features: installability and basic offline support via a service worker.
+
+## What was added
+- **Web App Manifest** (`manifest.webmanifest`):
+  - `name`, `short_name`, and `description`
+  - `start_url: ./` and `scope: ./` for correct relative paths (works on GitHub Pages/project subpaths)
+  - `display: standalone`, `background_color`, `theme_color`
+  - **Icons**: 192×192 and 512×512 under `img/icons/`
+
+- **Service Worker** (`service-worker.js`):
+  - Precaches core assets (HTML/CSS/JS/icons) on install
+  - Cleans up old caches on activate and claims clients
+  - Serves cached assets when offline (same‑origin requests)
+  - `self.skipWaiting()` to promote new SW versions during development
+
+## Caching strategy
+- **App Shell (precache)**: `index.html`, CSS, JS, icons.
+- **Runtime**: For same-origin requests, the SW responds from cache first, then falls back to network. This ensures the app still loads offline.
