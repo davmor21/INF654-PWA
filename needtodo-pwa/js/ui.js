@@ -1,20 +1,28 @@
 document.addEventListener('DOMContentLoaded', async () => {
   M.AutoInit();
+  M.Modal.init(document.querySelectorAll('.modal'));
+
   await DB.openDB();
 
-  // Auto-sync queued operations at startup if online (no user action needed)
-if (navigator.onLine && window.FirebaseLive && window.IDBStore) {
-  setTimeout(() => {
-    syncOutboxToFirebase().catch(err => console.warn('Startup sync failed:', err));
-  }, 1000); // 1s delay ensures modals + FABs initialize first
-}
-
-
-  seedFirstRun();
+  // Always render from local cache immediately (fast startup)
   renderHabits();
   renderClasses();
   renderHomeTasks();
 
+  // If online, pull latest Firebase data asynchronously
+  if (navigator.onLine && window.FirebaseLive && window.IDBStore) {
+    syncOutboxToFirebase().catch(console.warn);
+    loadFromFirebase()
+      .then(() => {
+        console.log('[Sync] Firebase data loaded → re-rendering UI');
+        renderHabits();
+        renderClasses();
+        renderHomeTasks();
+      })
+      .catch(e => console.error('[Sync] Firebase load failed:', e));
+  }
+
+  // Event bindings
   document.getElementById('fabAddHabit').addEventListener('click', onAddHabit);
   document.getElementById('btnAddClass').addEventListener('click', onAddClass);
   document.getElementById('btnAddAssignment').addEventListener('click', onAddAssignment);
@@ -22,6 +30,8 @@ if (navigator.onLine && window.FirebaseLive && window.IDBStore) {
   document.getElementById('btnExport').addEventListener('click', onExport);
   document.getElementById('btnDoImport').addEventListener('click', onDoImport);
 });
+
+
 
 const CURRENT_WS = 'ws_demo';
 
@@ -36,6 +46,31 @@ async function seedFirstRun() {
     // await DB.put('homeTasks', { id: Domain.uid('home'), workspaceId: CURRENT_WS, title: 'Fridge water filter', freq: {unit:'months', every:6}, lastDoneISO: null, nextDueISO: Domain.computeNextDue(null,{unit:'months',every:6}), createdAt: new Date().toISOString() });
   }
 }
+
+async function loadFromFirebase() {
+  if (!navigator.onLine || !window.FirebaseLive) return;
+
+  console.log('[Sync] Pulling from Firebase...');
+  try {
+    const [tasks, homeTasks, classes, assignments] = await Promise.all([
+      FirebaseLive.fbGetAll('tasks'),
+      FirebaseLive.fbGetAll('homeTasks'),
+      FirebaseLive.fbGetAll('classes'),
+      FirebaseLive.fbGetAll('assignments')
+    ]);
+
+    // Cache into IndexedDB for offline mode
+    for (const t of tasks) await DB.put('tasks', t);
+    for (const h of homeTasks) await DB.put('homeTasks', h);
+    for (const c of classes) await DB.put('classes', c);
+    for (const a of assignments) await DB.put('assignments', a);
+
+    console.log('[Sync] Firebase data cached locally.');
+  } catch (e) {
+    console.error('[Sync] Firebase fetch failed:', e);
+  }
+}
+
 
 async function renderHabits() {
   const all = await DB.all('tasks');
@@ -170,13 +205,23 @@ async function logHomeTask(id) {
 async function onAddHabit() {
   const title = prompt('Habit title:');
   if (!title) return;
-  const task = { id: Domain.uid('task'), workspaceId: CURRENT_WS, type: 'habit', title, status: 'todo', recurrence: {unit:'days', every:1}, createdAt: new Date().toISOString() };
+ const task = {
+  id: Domain.uid('task'),
+  workspaceId: CURRENT_WS,
+  type: 'habit',
+  title,
+  status: 'todo',
+  recurrence: {unit:'days', every:1},
+  createdAt: new Date().toISOString(),
+  modifiedDate: new Date().toISOString()
+};
+
 
   await DB.put('tasks', task); // local first for offline UX
 
   // NEW: push to Firebase if online; otherwise queue for later
   if (navigator.onLine && window.FirebaseLive) {
-    try { await FirebaseLive.fbCreate(task); } catch(e) { console.warn('fbCreate failed; will queue:', e); if (window.IDBStore) await IDBStore.queueOp({ type: 'create', task }); }
+    try { await FirebaseLive.fbCreate(task, "tasks"); } catch(e) { console.warn('fbCreate failed; will queue:', e); if (window.IDBStore) await IDBStore.queueOp({ type: 'create', task }); }
   } else if (window.IDBStore) {
     try { await IDBStore.queueOp({ type: 'create', task }); } catch {}
   }
@@ -188,31 +233,83 @@ async function onAddClass() {
   const name = prompt('Class name:');
   if (!name) return;
   const id = Domain.uid('class');
-  await DB.put('classes', { id, workspaceId: CURRENT_WS, name, term: 'Fall 2025' });
+  const newClass = {
+  id,
+  workspaceId: CURRENT_WS,
+  name,
+  term: 'Fall 2025',
+  createdAt: new Date().toISOString(),
+  modifiedDate: new Date().toISOString()
+};
+
+
+  await DB.put('classes', newClass);
   await DB.put('gradeSchemes', { classId: id, workspaceId: CURRENT_WS, categories: [{name:'Homework', weight:30},{name:'Labs', weight:30},{name:'Exams', weight:40}] });
+
+  // 🔥 Firebase sync
+  if (navigator.onLine && window.FirebaseLive) {
+    try { await FirebaseLive.fbCreate(newClass, "classes"); } 
+    catch(e) { console.warn('fbCreate(classes) failed; queuing', e); if (window.IDBStore) await IDBStore.queueOp({ type: 'create', collection: 'classes', task: newClass }); }
+  } else if (window.IDBStore) {
+    await IDBStore.queueOp({ type: 'create', collection: 'classes', task: newClass });
+  }
+
   renderClasses();
 }
+
 
 async function onAddAssignment() {
   if (!_selectedClass) return;
   const title = prompt('Assignment title:');
   if (!title) return;
   const due = new Date(Date.now()+3*86400000).toISOString();
-  await DB.put('assignments', { id: Domain.uid('asg'), classId: _selectedClass, title, dueISO: due, status: 'todo' });
+  const newAssignment = {
+  id: Domain.uid('asg'),
+  classId: _selectedClass,
+  title,
+  dueISO: due,
+  status: 'todo',
+  createdAt: new Date().toISOString(),
+  modifiedDate: new Date().toISOString()
+};
+
+
+  await DB.put('assignments', newAssignment);
+
+  // 🔥 Firebase sync
+  if (navigator.onLine && window.FirebaseLive) {
+    try { await FirebaseLive.fbCreate(newAssignment, "assignments"); }
+    catch(e) { console.warn('fbCreate(assignments) failed; queuing', e); if (window.IDBStore) await IDBStore.queueOp({ type: 'create', collection: 'assignments', task: newAssignment }); }
+  } else if (window.IDBStore) {
+    await IDBStore.queueOp({ type: 'create', collection: 'assignments', task: newAssignment });
+  }
+
   renderAssignments();
 }
+
 
 async function onAddHomeTask() {
   const title = prompt('Home task title:');
   if (!title) return;
   const next = Domain.computeNextDue(null, {unit:'weeks', every:1});
-  const task = { id: Domain.uid('home'), workspaceId: CURRENT_WS, type:'home', title, freq: {unit:'weeks', every:1}, lastDoneISO: null, nextDueISO: next, createdAt: new Date().toISOString() };
+  const task = {
+  id: Domain.uid('home'),
+  workspaceId: CURRENT_WS,
+  type: 'home',
+  title,
+  freq: {unit:'weeks', every:1},
+  lastDoneISO: null,
+  nextDueISO: next,
+  createdAt: new Date().toISOString(),
+  modifiedDate: new Date().toISOString()
+};
+
 
   await DB.put('homeTasks', task); // local first
 
   // NEW: push to Firebase if online; otherwise queue
   if (navigator.onLine && window.FirebaseLive) {
-    try { await FirebaseLive.fbCreate(task); } catch(e) { console.warn('fbCreate failed; will queue:', e); if (window.IDBStore) await IDBStore.queueOp({ type: 'create', task }); }
+    try { await FirebaseLive.fbCreate(task, "homeTasks"); } catch(e) { console.warn('fbCreate failed; will queue:', e); if (window.IDBStore) await IDBStore.queueOp({ type: 'create', task }); }
   } else if (window.IDBStore) {
     try { await IDBStore.queueOp({ type: 'create', task }); } catch {}
   }
@@ -269,4 +366,8 @@ async function syncOutboxToFirebase() {
 
 window.addEventListener('online', async () => {
   await syncOutboxToFirebase();
+  await loadFromFirebase();
+  renderHabits();
+  renderClasses();
+  renderHomeTasks();
 });
