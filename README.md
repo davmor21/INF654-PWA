@@ -82,4 +82,36 @@ This update expands the prototype to support both **online** and **offline** dat
 
 ---
 
+
+# NeedToDo PWA — Final Version (INF654 Project)
+
+This phase completes NeedToDo with **Google Authentication**, **user-scoped Firebase data**, and improved UI/UX. All core PWA components are now working together so the app runs online and offline, syncing automatically when connectivity changes.
+
+### What was added/finalized
+- **Google Sign-In (Firebase Auth)**
+  - Each user sees only their own tasks
+  - Profile menu with dropdown to sign out
+- **Firestore Structure:** `/users/{uid}/tasks`, `/classes`, `/homeTasks`, `/assignments`
+- **IndexedDB Sync**
+  - Local offline storage for all data
+  - Outbox system replays unsynced changes on reconnect
+- **Service Worker + Manifest**
+  - Full offline caching and installability
+- **Responsive UI**
+  - Desktop: profile at top right
+  - Mobile: simplified layout with profile menu
+- **Automatic Sync**
+  - On app load
+  - When reconnecting
+  - After user signs in
+
+### Usage Notes
+- App installs on mobile and desktop
+- Works fully without internet
+- Data syncs across multiple sessions/devices for the same Google account
+
+**Developed for Fort Hays State University — INF654 Progressive Web Apps**
+
+---
+
 **Developed for Fort Hays State University — INF654 Progressive Web Applications**
