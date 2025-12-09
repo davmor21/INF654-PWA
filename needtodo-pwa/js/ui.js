@@ -35,13 +35,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btnSignIn').addEventListener('click', () => FirebaseLive.fbSignIn());
   document.getElementById('btnSignOut').addEventListener('click', () => FirebaseLive.fbSignOut());
   document.getElementById('profileMenuTrigger').addEventListener('click', () => {
-  if (firebase.auth().currentUser) {
-    firebase.auth().signOut();
-  } else {
-    firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider());
-    document.getElementById('profilePic').src = 'img/default-user.png';
-  }
-});
+    if (firebase.auth().currentUser) {
+      firebase.auth().signOut();
+    } else {
+      firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider());
+      document.getElementById('profilePic').src = 'img/default-user.png';
+    }
+  });
 
 });
 
@@ -49,6 +49,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 // ---------------- CONSTS -----------------
 
 const CURRENT_WS = 'ws_demo';
+// NEW: track currently signed-in user UID for local filtering
+let CURRENT_UID = null;
 
 
 // ---------------- AUTH UI -----------------
@@ -58,6 +60,9 @@ window.onAuthChangedUI = function(user) {
   const signInBtn = document.getElementById('btnSignIn');
   const signOutBtn = document.getElementById('btnSignOut');
   const userSpan = document.getElementById('authUser');
+
+  // NEW: store UID globally
+  CURRENT_UID = user ? user.uid : null;
 
   if (user) {
     signInBtn.style.display = 'none';
@@ -124,7 +129,12 @@ async function loadFromFirebase() {
 
 async function renderHabits() {
   const all = await DB.all('tasks');
-  const habits = all.filter(t => t.type === 'habit' && t.workspaceId === CURRENT_WS);
+  // ONLY show tasks for the current user
+  const habits = all.filter(t =>
+    t.type === 'habit' &&
+    t.workspaceId === CURRENT_WS &&
+    (!CURRENT_UID || t.uid === CURRENT_UID)
+  );
   const container = document.getElementById('habitsList');
 
   container.innerHTML = habits.map(h => `
@@ -145,7 +155,9 @@ async function markHabitDone(id) {
     dateISO: new Date().toISOString().slice(0,10),
     actorUid: 'local',
     createdAt: new Date().toISOString(),
-    modifiedAt: Date.now()
+    modifiedAt: Date.now(),
+    // NEW: tag log by user
+    uid: CURRENT_UID
   };
 
   await DB.put('logs', log);
@@ -158,7 +170,10 @@ async function markHabitDone(id) {
 let _selectedClass = null;
 
 async function renderClasses() {
-  const classes = (await DB.all('classes')).filter(c => c.workspaceId === CURRENT_WS);
+  const classes = (await DB.all('classes')).filter(c =>
+    c.workspaceId === CURRENT_WS &&
+    (!CURRENT_UID || c.uid === CURRENT_UID)
+  );
   const el = document.getElementById('classesList');
 
   el.innerHTML = classes.map(c => `
@@ -181,7 +196,10 @@ async function renderAssignments() {
   const list = document.getElementById('assignmentsList');
   if (!_selectedClass) { list.innerHTML = '<p class="grey-text">Select a class.</p>'; return; }
 
-  const items = (await DB.all('assignments')).filter(a => a.classId === _selectedClass);
+  const items = (await DB.all('assignments')).filter(a =>
+    a.classId === _selectedClass &&
+    (!CURRENT_UID || a.uid === CURRENT_UID)
+  );
   list.innerHTML = items.map(a => `
     <div class="card">
       <div class="card-content">
@@ -196,7 +214,8 @@ async function renderAssignments() {
 }
 
 async function markAssignmentDone(id) {
-  const as = (await DB.all('assignments')).find(x => x.id === id);
+  const all = await DB.all('assignments');
+  const as = all.find(x => x.id === id && (!CURRENT_UID || x.uid === CURRENT_UID));
   if (!as) return;
   as.status = 'done';
   as.modifiedAt = Date.now();
@@ -213,8 +232,18 @@ async function renderGrade() {
   const target = document.getElementById('currentGrade');
   if (!_selectedClass) { target.textContent = 'Select a class'; return; }
 
-  const scheme = (await DB.all('gradeSchemes')).find(g => g.classId === _selectedClass);
-  const items = (await DB.all('gradeItems')).filter(i => i.classId === _selectedClass);
+  const schemeAll = await DB.all('gradeSchemes');
+  const itemsAll = await DB.all('gradeItems');
+
+  const scheme = schemeAll.find(g =>
+    g.classId === _selectedClass &&
+    (!CURRENT_UID || g.uid === CURRENT_UID)
+  );
+  const items = itemsAll.filter(i =>
+    i.classId === _selectedClass &&
+    (!CURRENT_UID || i.uid === CURRENT_UID)
+  );
+
   const res = Domain.computeWeightedGrade(scheme, items);
 
   if (!res) {
@@ -230,7 +259,11 @@ async function renderGradeSchemeEditor() {
   const panel = document.getElementById('gradeSchemePanel');
   if (!_selectedClass) { panel.textContent = 'Select a class to edit weights'; return; }
 
-  const scheme = (await DB.all('gradeSchemes')).find(g => g.classId === _selectedClass);
+  const allSchemes = await DB.all('gradeSchemes');
+  const scheme = allSchemes.find(g =>
+    g.classId === _selectedClass &&
+    (!CURRENT_UID || g.uid === CURRENT_UID)
+  );
   if (!scheme) { panel.innerHTML = '<p class="grey-text">No scheme yet.</p>'; return; }
 
   panel.innerHTML = scheme.categories.map(c => `
@@ -245,7 +278,10 @@ async function renderGradeSchemeEditor() {
 // ---------- HOME TASKS  ----------
 
 async function renderHomeTasks() {
-  const tasks = (await DB.all('homeTasks')).filter(t => t.workspaceId === CURRENT_WS);
+  const tasks = (await DB.all('homeTasks')).filter(t =>
+    t.workspaceId === CURRENT_WS &&
+    (!CURRENT_UID || t.uid === CURRENT_UID)
+  );
   const el = document.getElementById('homeTasksList');
   const now = Date.now();
 
@@ -274,7 +310,7 @@ async function renderHomeTasks() {
 
 async function logHomeTask(id) {
   const tasks = await DB.all('homeTasks');
-  const task = tasks.find(t => t.id === id);
+  const task = tasks.find(t => t.id === id && (!CURRENT_UID || t.uid === CURRENT_UID));
   if (!task) return;
 
   task.lastDoneISO = new Date().toISOString();
@@ -310,7 +346,9 @@ async function onAddHabit() {
     status: 'todo',
     recurrence: {unit:'days', every:1},
     createdAt: new Date().toISOString(),
-    modifiedAt: Date.now()
+    modifiedAt: Date.now(),
+    // NEW: tag by user
+    uid: CURRENT_UID
   };
 
   await DB.put('tasks', task);
@@ -336,7 +374,9 @@ async function onAddClass() {
     name,
     term: 'Fall 2025',
     createdAt: new Date().toISOString(),
-    modifiedAt: Date.now()
+    modifiedAt: Date.now(),
+    // NEW: user ownership
+    uid: CURRENT_UID
   };
 
   await DB.put('classes', newClass);
@@ -347,7 +387,9 @@ async function onAddClass() {
       {name:'Homework', weight:30},
       {name:'Labs', weight:30},
       {name:'Exams', weight:40}
-    ]
+    ],
+    // NEW: user ownership
+    uid: CURRENT_UID
   });
 
   if (navigator.onLine && window.FirebaseLive) {
@@ -374,7 +416,9 @@ async function onAddAssignment() {
     dueISO: due,
     status: 'todo',
     createdAt: new Date().toISOString(),
-    modifiedAt: Date.now()
+    modifiedAt: Date.now(),
+    // NEW: user ownership
+    uid: CURRENT_UID
   };
 
   await DB.put('assignments', newAssignment);
@@ -403,7 +447,9 @@ async function onAddHomeTask() {
     lastDoneISO: null,
     nextDueISO: next,
     createdAt: new Date().toISOString(),
-    modifiedAt: Date.now()
+    modifiedAt: Date.now(),
+    // NEW: user ownership
+    uid: CURRENT_UID
   };
 
   await DB.put('homeTasks', task);

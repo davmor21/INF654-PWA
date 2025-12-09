@@ -1,111 +1,155 @@
+// firebase-live.js
 (function () {
-  if (!window.FB_CONFIG) {
-    console.warn("Firebase config missing. Include firebase-config.js.");
+  if (!window.FB_CONFIG || !window.firebase) {
+    console.warn('[FirebaseLive] Missing FB_CONFIG or firebase global.');
     return;
   }
 
-  firebase.initializeApp(window.FB_CONFIG);
-  const db = firebase.firestore();
+  // Initialise (compat SDK)
+  if (!firebase.apps || !firebase.apps.length) {
+    firebase.initializeApp(window.FB_CONFIG);
+  }
+
+  const db   = firebase.firestore();
+  const auth = firebase.auth();
 
   let currentUser = null;
 
-  // --------- GET COLLECTIONS UNDER THE LOGGED-IN USER ---------
-  function getRefs() {
+  // ---------- helpers ----------
+
+  function requireUser() {
     if (!currentUser) {
-      console.warn("[Firebase] No user yet → returning null refs");
-      return null;
+      throw new Error('[FirebaseLive] No signed-in user.');
     }
-    const base = db.collection("users").doc(currentUser.uid);
+    return currentUser;
+  }
+
+  // Get a subcollection for the current user:
+  // collectionName is "tasks", "homeTasks", "classes", "assignments"
+  function userCollection(collectionName) {
+    const user = requireUser();
+    return db
+      .collection('users')
+      .doc(user.uid)
+      .collection(collectionName);
+  }
+
+  // Normalise item before write
+  function withTimestamps(item) {
+    const now = Date.now();
     return {
-      tasks:       base.collection("tasks"),
-      homeTasks:   base.collection("homeTasks"),
-      classes:     base.collection("classes"),
-      assignments: base.collection("assignments")
+      ...item,
+      updatedAt: item.updatedAt || now,
+      createdAt: item.createdAt || now,
     };
   }
 
+  // ---------- CRUD API ----------
 
-  // --------- CRUD HELPERS ---------
-  async function fbCreate(item, collectionName = "tasks") {
-    const refs = getRefs();
-    if (!refs) return;
-    item.modifiedAt = Date.now();
-    await refs[collectionName].doc(item.id).set(item, { merge: true });
-    console.log(`[Firebase] Create in ${collectionName}:`, item.id);
-    return item;
+  async function fbCreate(item, collectionName = 'tasks') {
+    const col = userCollection(collectionName);
+
+    // If caller didn’t set id, let Firestore make one and mirror it back
+    const docRef = item.id ? col.doc(item.id) : col.doc();
+    const data   = withTimestamps({ ...item, id: docRef.id });
+
+    await docRef.set(data, { merge: true });
+    console.log(`[Firebase] Created in ${collectionName}:`, docRef.id);
+    return data;
   }
 
-  async function fbUpdate(item, collectionName = "tasks") {
-    const refs = getRefs();
-    if (!refs) return;
-    item.modifiedAt = Date.now();
-    await refs[collectionName].doc(item.id).set(item, { merge: true });
-    console.log(`[Firebase] Update in ${collectionName}:`, item.id);
-    return item;
+  async function fbUpdate(item, collectionName = 'tasks') {
+    if (!item.id) throw new Error('fbUpdate requires item.id');
+    const col   = userCollection(collectionName);
+    const data  = withTimestamps(item);
+    await col.doc(item.id).set(data, { merge: true });
+    console.log(`[Firebase] Updated in ${collectionName}:`, item.id);
+    return data;
   }
 
-  async function fbDelete(id, collectionName = "tasks") {
-    const refs = getRefs();
-    if (!refs) return;
-    await refs[collectionName].doc(id).delete();
-    console.log(`[Firebase] Delete from ${collectionName}:`, id);
+  async function fbDelete(id, collectionName = 'tasks') {
+    const col = userCollection(collectionName);
+    await col.doc(id).delete();
+    console.log(`[Firebase] Deleted from ${collectionName}:`, id);
   }
 
-  async function fbGetAll(collectionName = "tasks") {
-    const refs = getRefs();
-    if (!refs) return [];
+  async function fbGetAll(collectionName = 'tasks') {
+    if (!currentUser) {
+      // Not signed in → nothing from Firestore (you still have IndexedDB)
+      console.log(`[Firebase] fbGetAll(${collectionName}) with no user → []`);
+      return [];
+    }
+
+    const col = userCollection(collectionName);
+
     try {
-      const snap = await refs[collectionName].orderBy("modifiedAt", "desc").get();
+      const snap = await col.orderBy('updatedAt', 'desc').get();
       const docs = snap.docs.map(d => d.data());
-      console.log(`[Firebase] Loaded ${docs.length} from ${collectionName}`);
+      console.log(
+        `[Firebase] Loaded ${docs.length} from users/${currentUser.uid}/${collectionName}`
+      );
       return docs;
     } catch (e) {
-      console.warn(`[Firebase] fbGetAll fallback:`, e);
-      const snap = await refs[collectionName].get();
-      return snap.docs.map(d => d.data());
+      console.warn(
+        `[Firebase] orderBy(updatedAt) failed in ${collectionName}, falling back:`,
+        e
+      );
+      const snap = await col.get();
+      const docs = snap.docs.map(d => d.data());
+      console.log(
+        `[Firebase] Loaded ${docs.length} from users/${currentUser?.uid}/${collectionName} (fallback)`
+      );
+      return docs;
     }
   }
 
+  // ---------- Auth API ----------
 
-  // --------- AUTH ---------
   async function fbSignIn() {
     const provider = new firebase.auth.GoogleAuthProvider();
     try {
-      const res = await firebase.auth().signInWithPopup(provider);
+      const res = await auth.signInWithPopup(provider);
       currentUser = res.user;
-      console.log("[Auth] Signed in as", currentUser.uid);
-      return currentUser.uid;
+      console.log('[Auth] Signed in as', currentUser.uid);
+      return currentUser;
     } catch (e) {
-      console.error("[Auth] Sign-in failed:", e);
+      console.error('[Auth] Sign-in failed:', e);
+      throw e;
     }
   }
 
   async function fbSignOut() {
     try {
-      await firebase.auth().signOut();
+      await auth.signOut();
+      console.log('[Auth] Signed out');
       currentUser = null;
-      console.log("[Auth] Signed out");
     } catch (e) {
-      console.error("[Auth] Sign-out failed:", e);
+      console.error('[Auth] Sign-out error:', e);
+      throw e;
     }
   }
 
-  firebase.auth().onAuthStateChanged(user => {
+  function fbGetCurrentUser() {
+    return currentUser;
+  }
+
+  // Keep UI in sync
+  auth.onAuthStateChanged(user => {
     currentUser = user || null;
-    console.log("[AuthListener] now:", currentUser ? currentUser.uid : "signed out");
+    console.log('[AuthListener] now:', currentUser ? currentUser.uid : 'null');
     if (window.onAuthChangedUI) {
       window.onAuthChangedUI(currentUser);
     }
   });
 
-
-  // --------- EXPORT ---------
+  // Expose global API
   window.FirebaseLive = {
     fbCreate,
     fbUpdate,
     fbDelete,
     fbGetAll,
     fbSignIn,
-    fbSignOut
+    fbSignOut,
+    fbGetCurrentUser,
   };
 })();
