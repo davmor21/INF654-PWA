@@ -1,17 +1,70 @@
+// ---------------- UI / APP GLUE ------------------
+
 document.addEventListener('DOMContentLoaded', async () => {
+  console.log("NeedToDo app loaded");
+
   M.AutoInit();
   M.Modal.init(document.querySelectorAll('.modal'));
 
+  // Open IndexedDB
   await DB.openDB();
 
-  // Always render from local cache immediately (fast startup)
+  // Initial fast render from cache (offline-first)
   renderHabits();
   renderClasses();
   renderHomeTasks();
 
-  // If online, pull latest Firebase data asynchronously
-  if (navigator.onLine && window.FirebaseLive && window.IDBStore) {
-    syncOutboxToFirebase().catch(console.warn);
+  // If user already authed (page refresh)
+  if (firebase.auth().currentUser) {
+    console.log('[Auth] Restored session');
+    await loadFromFirebase();
+    renderHabits();
+    renderClasses();
+    renderHomeTasks();
+  }
+
+  // Bind buttons
+  document.getElementById('fabAddHabit').addEventListener('click', onAddHabit);
+  document.getElementById('btnAddClass').addEventListener('click', onAddClass);
+  document.getElementById('btnAddAssignment').addEventListener('click', onAddAssignment);
+  document.getElementById('fabAddHomeTask').addEventListener('click', onAddHomeTask);
+  document.getElementById('btnExport').addEventListener('click', onExport);
+  document.getElementById('btnDoImport').addEventListener('click', onDoImport);
+
+  // Auth buttons
+  document.getElementById('btnSignIn').addEventListener('click', () => FirebaseLive.fbSignIn());
+  document.getElementById('btnSignOut').addEventListener('click', () => FirebaseLive.fbSignOut());
+  document.getElementById('profileMenuTrigger').addEventListener('click', () => {
+  if (firebase.auth().currentUser) {
+    firebase.auth().signOut();
+  } else {
+    firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider());
+    document.getElementById('profilePic').src = 'img/default-user.png';
+  }
+});
+
+});
+
+
+// ---------------- CONSTS -----------------
+
+const CURRENT_WS = 'ws_demo';
+
+
+// ---------------- AUTH UI -----------------
+
+window.onAuthChangedUI = function(user) {
+  console.log('[Auth] UI Hook →', user ? user.uid : 'signed out');
+  const signInBtn = document.getElementById('btnSignIn');
+  const signOutBtn = document.getElementById('btnSignOut');
+  const userSpan = document.getElementById('authUser');
+
+  if (user) {
+    signInBtn.style.display = 'none';
+    signOutBtn.style.display = 'block';
+    userSpan.textContent = user.displayName;
+
+    // Pull firebase data now that we know UID
     loadFromFirebase()
       .then(() => {
         console.log('[Sync] Firebase data loaded → re-rendering UI');
@@ -20,37 +73,32 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderHomeTasks();
       })
       .catch(e => console.error('[Sync] Firebase load failed:', e));
+    const profilePic = document.getElementById('profilePic');
+    if (user.photoURL) {
+      profilePic.src = user.photoURL;
+    } else {
+      profilePic.src = 'img/default-user.png';
+    }
+
+  } else {
+    signInBtn.style.display = 'block';
+    signOutBtn.style.display = 'none';
+    userSpan.textContent = '';
+
+    // Clear UI for signed-out view
+    document.getElementById('habitsList').innerHTML = '<p>Please sign in</p>';
+    document.getElementById('classesList').innerHTML = '<p>Please sign in</p>';
+    document.getElementById('homeTasksList').innerHTML = '<p>Please sign in</p>';
   }
-
-  // Event bindings
-  document.getElementById('fabAddHabit').addEventListener('click', onAddHabit);
-  document.getElementById('btnAddClass').addEventListener('click', onAddClass);
-  document.getElementById('btnAddAssignment').addEventListener('click', onAddAssignment);
-  document.getElementById('fabAddHomeTask').addEventListener('click', onAddHomeTask);
-  document.getElementById('btnExport').addEventListener('click', onExport);
-  document.getElementById('btnDoImport').addEventListener('click', onDoImport);
-});
+};
 
 
-
-const CURRENT_WS = 'ws_demo';
-
-async function seedFirstRun() {
-  const classes = await DB.all('classes');
-  if (!classes.length) {
-    // await DB.put('workspaces', { id: CURRENT_WS, name: 'Demo Workspace', members: [], createdAt: new Date().toISOString() });
-    // await DB.put('tasks', { id: Domain.uid('task'), workspaceId: CURRENT_WS, type: 'habit', title: 'Take vitamins', status: 'todo', recurrence: {unit:'days', every:1}, createdAt: new Date().toISOString() });
-    // await DB.put('classes', { id: 'class_demo', workspaceId: CURRENT_WS, name: 'CSCI 331', term: 'Fall 2025' });
-    // await DB.put('assignments', { id: Domain.uid('asg'), classId: 'class_demo', title: 'HW1', dueISO: new Date(Date.now()+86400000).toISOString(), status: 'todo' });
-    // await DB.put('gradeSchemes', { classId: 'class_demo', workspaceId: CURRENT_WS, categories: [{name:'Homework', weight:30},{name:'Labs', weight:30},{name:'Exams', weight:40}] });
-    // await DB.put('homeTasks', { id: Domain.uid('home'), workspaceId: CURRENT_WS, title: 'Fridge water filter', freq: {unit:'months', every:6}, lastDoneISO: null, nextDueISO: Domain.computeNextDue(null,{unit:'months',every:6}), createdAt: new Date().toISOString() });
-  }
-}
+// ---------------- SYNC LOAD -----------------
 
 async function loadFromFirebase() {
   if (!navigator.onLine || !window.FirebaseLive) return;
-
   console.log('[Sync] Pulling from Firebase...');
+
   try {
     const [tasks, homeTasks, classes, assignments] = await Promise.all([
       FirebaseLive.fbGetAll('tasks'),
@@ -59,7 +107,7 @@ async function loadFromFirebase() {
       FirebaseLive.fbGetAll('assignments')
     ]);
 
-    // Cache into IndexedDB for offline mode
+    // Cache into IndexedDB
     for (const t of tasks) await DB.put('tasks', t);
     for (const h of homeTasks) await DB.put('homeTasks', h);
     for (const c of classes) await DB.put('classes', c);
@@ -72,10 +120,13 @@ async function loadFromFirebase() {
 }
 
 
+// ---------------- UI RENDERING -----------------
+
 async function renderHabits() {
   const all = await DB.all('tasks');
   const habits = all.filter(t => t.type === 'habit' && t.workspaceId === CURRENT_WS);
   const container = document.getElementById('habitsList');
+
   container.innerHTML = habits.map(h => `
     <div class="card">
       <div class="card-content">
@@ -87,16 +138,29 @@ async function renderHabits() {
 }
 
 async function markHabitDone(id) {
-  const log = { id: Domain.uid('log'), workspaceId: CURRENT_WS, taskId: id, dateISO: new Date().toISOString().slice(0,10), actorUid: 'local', createdAt: new Date().toISOString() };
+  const log = {
+    id: Domain.uid('log'),
+    workspaceId: CURRENT_WS,
+    taskId: id,
+    dateISO: new Date().toISOString().slice(0,10),
+    actorUid: 'local',
+    createdAt: new Date().toISOString(),
+    modifiedAt: Date.now()
+  };
+
   await DB.put('logs', log);
   M.toast({html: 'Marked done'});
 }
+
+
+// ---------- CLASSES  ----------
 
 let _selectedClass = null;
 
 async function renderClasses() {
   const classes = (await DB.all('classes')).filter(c => c.workspaceId === CURRENT_WS);
   const el = document.getElementById('classesList');
+
   el.innerHTML = classes.map(c => `
     <a class="waves-effect waves-light btn-flat" onclick="selectClass('${c.id}')">${c.name}</a>
   `).join('') || '<p class="grey-text">No classes yet.</p>';
@@ -110,9 +174,13 @@ async function selectClass(id) {
   await renderGradeSchemeEditor();
 }
 
+
+// ---------- ASSIGNMENTS ----------
+
 async function renderAssignments() {
   const list = document.getElementById('assignmentsList');
   if (!_selectedClass) { list.innerHTML = '<p class="grey-text">Select a class.</p>'; return; }
+
   const items = (await DB.all('assignments')).filter(a => a.classId === _selectedClass);
   list.innerHTML = items.map(a => `
     <div class="card">
@@ -131,18 +199,29 @@ async function markAssignmentDone(id) {
   const as = (await DB.all('assignments')).find(x => x.id === id);
   if (!as) return;
   as.status = 'done';
+  as.modifiedAt = Date.now();
+
   await DB.put('assignments', as);
   M.toast({html: 'Assignment marked done'});
   renderAssignments();
 }
 
+
+// ---------- GRADE ----------
+
 async function renderGrade() {
   const target = document.getElementById('currentGrade');
   if (!_selectedClass) { target.textContent = 'Select a class'; return; }
+
   const scheme = (await DB.all('gradeSchemes')).find(g => g.classId === _selectedClass);
   const items = (await DB.all('gradeItems')).filter(i => i.classId === _selectedClass);
   const res = Domain.computeWeightedGrade(scheme, items);
-  if (!res) { target.innerHTML = '<span class="grey-text">Add a grade scheme to see current grade.</span>'; return; }
+
+  if (!res) {
+    target.innerHTML = '<span class="grey-text">Add a grade scheme to see current grade.</span>';
+    return;
+  }
+
   const pct = res.percent.toFixed(1);
   target.innerHTML = `<strong>${pct}%</strong> (weights total ${res.weightSum}%)`;
 }
@@ -150,8 +229,10 @@ async function renderGrade() {
 async function renderGradeSchemeEditor() {
   const panel = document.getElementById('gradeSchemePanel');
   if (!_selectedClass) { panel.textContent = 'Select a class to edit weights'; return; }
+
   const scheme = (await DB.all('gradeSchemes')).find(g => g.classId === _selectedClass);
   if (!scheme) { panel.innerHTML = '<p class="grey-text">No scheme yet.</p>'; return; }
+
   panel.innerHTML = scheme.categories.map(c => `
     <div class="row" style="margin-bottom:8px;">
       <div class="col s6"><input value="${c.name}" disabled></div>
@@ -160,18 +241,27 @@ async function renderGradeSchemeEditor() {
   `).join('');
 }
 
+
+// ---------- HOME TASKS  ----------
+
 async function renderHomeTasks() {
   const tasks = (await DB.all('homeTasks')).filter(t => t.workspaceId === CURRENT_WS);
   const el = document.getElementById('homeTasksList');
   const now = Date.now();
+
   el.innerHTML = tasks.map(t => {
     const next = t.nextDueISO ? new Date(t.nextDueISO).getTime() : null;
-    const badge = (next && next - now < 0) ? 'due' : (next && next - now < 3*86400000 ? 'soon' : 'ok');
+    const badge = (next && next - now < 0) ? 'due'
+                 : (next && next - now < 3*86400000) ? 'soon'
+                 : 'ok';
     const nextTxt = next ? new Date(next).toLocaleDateString() : '—';
+
     return `
       <div class="card">
         <div class="card-content">
-          <span class="card-title">${t.title} <span class="new badge ${badge}" data-badge-caption="${badge==='due'?'Overdue':badge==='soon'?'Soon':'OK'}"></span></span>
+          <span class="card-title">${t.title}
+            <span class="new badge ${badge}" data-badge-caption="${badge==='due'?'Overdue':badge==='soon'?'Soon':'OK'}"></span>
+          </span>
           <p class="small-muted">Next due: ${nextTxt}</p>
           <div class="section">
             <a class="btn-small blue" onclick="logHomeTask('${t.id}')">Log as done</a>
@@ -186,44 +276,50 @@ async function logHomeTask(id) {
   const tasks = await DB.all('homeTasks');
   const task = tasks.find(t => t.id === id);
   if (!task) return;
+
   task.lastDoneISO = new Date().toISOString();
+  task.modifiedAt = Date.now();
   task.nextDueISO = Domain.computeNextDue(task.lastDoneISO, task.freq);
-  await DB.put('homeTasks', task); // keep local behavior
-  // NEW: sync to Firebase (or queue) without changing UI flow
+
+  await DB.put('homeTasks', task);
+
+  // Sync or queue
   if (navigator.onLine && window.FirebaseLive) {
-    try { await FirebaseLive.fbUpdate(task); } catch(e) { console.warn('fbUpdate failed; will queue:', e); }
+    try { await FirebaseLive.fbUpdate(task); } 
+    catch(e) { console.warn('fbUpdate failed; queueing:', e); }
   } else if (window.IDBStore) {
-    try { await IDBStore.queueOp({ type: 'update', task }); } catch {}
+    await IDBStore.queueOp({ type: 'update', task });
   }
+
   M.toast({html: 'Logged'});
   renderHomeTasks();
 }
 
-// --- Simple add actions ---
-// (Only these two gained tiny Firebase sync — everything else untouched)
+
+// ---------------- ADD HANDLERS -----------------
 
 async function onAddHabit() {
   const title = prompt('Habit title:');
   if (!title) return;
- const task = {
-  id: Domain.uid('task'),
-  workspaceId: CURRENT_WS,
-  type: 'habit',
-  title,
-  status: 'todo',
-  recurrence: {unit:'days', every:1},
-  createdAt: new Date().toISOString(),
-  modifiedDate: new Date().toISOString()
-};
 
+  const task = {
+    id: Domain.uid('task'),
+    workspaceId: CURRENT_WS,
+    type: 'habit',
+    title,
+    status: 'todo',
+    recurrence: {unit:'days', every:1},
+    createdAt: new Date().toISOString(),
+    modifiedAt: Date.now()
+  };
 
-  await DB.put('tasks', task); // local first for offline UX
+  await DB.put('tasks', task);
 
-  // NEW: push to Firebase if online; otherwise queue for later
   if (navigator.onLine && window.FirebaseLive) {
-    try { await FirebaseLive.fbCreate(task, "tasks"); } catch(e) { console.warn('fbCreate failed; will queue:', e); if (window.IDBStore) await IDBStore.queueOp({ type: 'create', task }); }
-  } else if (window.IDBStore) {
-    try { await IDBStore.queueOp({ type: 'create', task }); } catch {}
+    try { await FirebaseLive.fbCreate(task, "tasks"); }
+    catch(e) { await IDBStore.queueOp({ type: 'create', task }); }
+  } else {
+    await IDBStore.queueOp({ type: 'create', task });
   }
 
   renderHabits();
@@ -232,97 +328,109 @@ async function onAddHabit() {
 async function onAddClass() {
   const name = prompt('Class name:');
   if (!name) return;
+
   const id = Domain.uid('class');
   const newClass = {
-  id,
-  workspaceId: CURRENT_WS,
-  name,
-  term: 'Fall 2025',
-  createdAt: new Date().toISOString(),
-  modifiedDate: new Date().toISOString()
-};
-
+    id,
+    workspaceId: CURRENT_WS,
+    name,
+    term: 'Fall 2025',
+    createdAt: new Date().toISOString(),
+    modifiedAt: Date.now()
+  };
 
   await DB.put('classes', newClass);
-  await DB.put('gradeSchemes', { classId: id, workspaceId: CURRENT_WS, categories: [{name:'Homework', weight:30},{name:'Labs', weight:30},{name:'Exams', weight:40}] });
+  await DB.put('gradeSchemes', {
+    classId: id,
+    workspaceId: CURRENT_WS,
+    categories: [
+      {name:'Homework', weight:30},
+      {name:'Labs', weight:30},
+      {name:'Exams', weight:40}
+    ]
+  });
 
-  // 🔥 Firebase sync
   if (navigator.onLine && window.FirebaseLive) {
-    try { await FirebaseLive.fbCreate(newClass, "classes"); } 
-    catch(e) { console.warn('fbCreate(classes) failed; queuing', e); if (window.IDBStore) await IDBStore.queueOp({ type: 'create', collection: 'classes', task: newClass }); }
-  } else if (window.IDBStore) {
-    await IDBStore.queueOp({ type: 'create', collection: 'classes', task: newClass });
+    try { await FirebaseLive.fbCreate(newClass, "classes"); }
+    catch(e) { await IDBStore.queueOp({ type: 'create', collection:'classes', task:newClass }); }
+  } else {
+    await IDBStore.queueOp({ type: 'create', collection:'classes', task:newClass });
   }
 
   renderClasses();
 }
 
-
 async function onAddAssignment() {
   if (!_selectedClass) return;
+
   const title = prompt('Assignment title:');
   if (!title) return;
+
   const due = new Date(Date.now()+3*86400000).toISOString();
   const newAssignment = {
-  id: Domain.uid('asg'),
-  classId: _selectedClass,
-  title,
-  dueISO: due,
-  status: 'todo',
-  createdAt: new Date().toISOString(),
-  modifiedDate: new Date().toISOString()
-};
-
+    id: Domain.uid('asg'),
+    classId: _selectedClass,
+    title,
+    dueISO: due,
+    status: 'todo',
+    createdAt: new Date().toISOString(),
+    modifiedAt: Date.now()
+  };
 
   await DB.put('assignments', newAssignment);
 
-  // 🔥 Firebase sync
   if (navigator.onLine && window.FirebaseLive) {
     try { await FirebaseLive.fbCreate(newAssignment, "assignments"); }
-    catch(e) { console.warn('fbCreate(assignments) failed; queuing', e); if (window.IDBStore) await IDBStore.queueOp({ type: 'create', collection: 'assignments', task: newAssignment }); }
-  } else if (window.IDBStore) {
-    await IDBStore.queueOp({ type: 'create', collection: 'assignments', task: newAssignment });
+    catch(e) { await IDBStore.queueOp({ type: 'create', collection:'assignments', task:newAssignment }); }
+  } else {
+    await IDBStore.queueOp({ type: 'create', collection:'assignments', task:newAssignment });
   }
 
   renderAssignments();
 }
 
-
 async function onAddHomeTask() {
   const title = prompt('Home task title:');
   if (!title) return;
+
   const next = Domain.computeNextDue(null, {unit:'weeks', every:1});
   const task = {
-  id: Domain.uid('home'),
-  workspaceId: CURRENT_WS,
-  type: 'home',
-  title,
-  freq: {unit:'weeks', every:1},
-  lastDoneISO: null,
-  nextDueISO: next,
-  createdAt: new Date().toISOString(),
-  modifiedDate: new Date().toISOString()
-};
+    id: Domain.uid('home'),
+    workspaceId: CURRENT_WS,
+    type:'home',
+    title,
+    freq: {unit:'weeks', every:1},
+    lastDoneISO: null,
+    nextDueISO: next,
+    createdAt: new Date().toISOString(),
+    modifiedAt: Date.now()
+  };
 
+  await DB.put('homeTasks', task);
 
-  await DB.put('homeTasks', task); // local first
-
-  // NEW: push to Firebase if online; otherwise queue
   if (navigator.onLine && window.FirebaseLive) {
-    try { await FirebaseLive.fbCreate(task, "homeTasks"); } catch(e) { console.warn('fbCreate failed; will queue:', e); if (window.IDBStore) await IDBStore.queueOp({ type: 'create', task }); }
-  } else if (window.IDBStore) {
-    try { await IDBStore.queueOp({ type: 'create', task }); } catch {}
+    try { await FirebaseLive.fbCreate(task, "homeTasks"); }
+    catch(e) { await IDBStore.queueOp({ type: 'create', task }); }
+  } else {
+    await IDBStore.queueOp({ type: 'create', task });
   }
 
   renderHomeTasks();
 }
 
-// Export / Import
+
+// ---------------- EXPORT / IMPORT -----------------
+
 async function onExport() {
-  const stores = ['workspaces','tasks','logs','classes','assignments','gradeSchemes','gradeItems','settings','homeTasks'];
+  const stores = [
+    'workspaces','tasks','logs','classes',
+    'assignments','gradeSchemes','gradeItems','settings','homeTasks'
+  ];
   const data = {};
   for (const s of stores) data[s] = await DB.all(s).catch(() => []);
-  const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), data }, null, 2)], { type: 'application/json' });
+  
+  const blob = new Blob([JSON.stringify({ exportedAt: new Date().toISOString(), data }, null, 2)],
+                        { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -336,35 +444,20 @@ async function onDoImport() {
   if (!file) return;
   const txt = await file.text();
   const payload = JSON.parse(txt);
+
   for (const [store, arr] of Object.entries(payload.data || {})) {
     for (const item of arr) await DB.put(store, item);
   }
+
   M.toast({html: 'Import complete'});
   renderHabits(); renderClasses(); renderHomeTasks();
 }
 
-/* ------- minimal auto-sync plumbing (no UI changes) ------- */
 
-async function syncOutboxToFirebase() {
-  if (!window.IDBStore || !window.FirebaseLive) return;
-  const ops = await IDBStore.loadOutbox().catch(() => []);
-  if (!ops || !ops.length) return;
-  for (const op of ops) {
-    try {
-      if (op.type === 'create' || op.type === 'update') {
-        await FirebaseLive.fbCreate(op.task);
-      } else if (op.type === 'delete') {
-        await FirebaseLive.fbDelete(op.id);
-      }
-      await IDBStore.removeFromOutbox(op.clientOpId);
-    } catch (e) {
-      console.error('[Sync] Failed op, will retry later:', op, e);
-      // leave queued
-    }
-  }
-}
+// ---------------- ONLINE EVENT -----------------
 
 window.addEventListener('online', async () => {
+  console.log('[Network] Online → syncing...');
   await syncOutboxToFirebase();
   await loadFromFirebase();
   renderHabits();

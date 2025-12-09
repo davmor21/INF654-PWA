@@ -107,3 +107,163 @@ input:focus {
   .tabs .tab a { font-size: .82rem; padding: 0 8px; }
   .card .card-title { font-size: 1.05rem; }
 }
+
+/* ---------------- Auth bar layout ---------------- */
+
+nav {
+  position: relative; /* so the auth bar can be positioned inside it */
+}
+
+.auth-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+/* Desktop: put name + buttons in top-right of the navbar */
+@media (min-width: 1400px) {
+  .auth-bar {
+    position: absolute;
+    right: 16px;
+    top: 0;
+    height: 64px; /* roughly Materialize nav height */
+    padding: 0 0;
+  }
+
+  #authUser {
+    color: #fff;
+    font-weight: 500;
+    margin-left: 8px;
+  }
+
+  #btnSignIn,
+  #btnSignOut {
+    margin: 0;
+  }
+}
+
+/* Mobile: keep them in a tidy bar under the brand */
+@media (max-width: 992px) {
+  .auth-bar {
+    padding: 8px 16px 10px;
+    background: #1976d2;       /* same blue as nav */
+    justify-content: flex-start;
+  }
+
+  #authUser {
+    color: #fff;
+    font-weight: 500;
+    margin-left: 12px;
+  }
+
+  #btnSignIn,
+  #btnSignOut {
+    height: 32px;
+    line-height: 32px;
+    padding: 0 10px;
+  }
+}
+
+Force auth row above the tab strip
+#authBar {
+  position: relative;
+  z-index: 20;
+}
+
+/* Ensure tabs stay visible but below auth */
+nav .tabs {
+  position: relative;
+  z-index: 10;
+}
+
+
+/* Make nav items wrap correctly */
+#nav-mobile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;  /* 🔥 fixes squish issues at ~1400px */
+}
+
+/* Auth bar default — hides on mobile */
+.auth-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Desktop: Auth bar in top-right */
+@media (min-width: 1300px) {
+  .auth-bar {
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+
+  #authUser {
+    color: #fff;
+    font-weight: 500;
+  }
+
+  #btnSignIn, #btnSignOut {
+    height: 32px;
+    line-height: 32px;
+    padding: 0 10px;
+  }
+}
+
+/* Mobile: Hide auth text/buttons (profile icon will replace later) */
+@media (max-width: 1300px) {
+  #authUser,
+  #btnSignIn,
+  #btnSignOut {
+    display: none !important;
+  }
+}
+
+/* Ensure tabs never overlap the auth bar */
+nav .tabs {
+  z-index: 1;
+}
+
+#authBar {
+  z-index: 2;
+}
+
+/* Profile icon styling */
+.profile-img {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.8);
+  cursor: pointer;
+}
+
+/* Desktop alignment */
+@media (max-width: 1299px) {
+  .profile-trigger {
+    display: flex;
+    align-items: center;
+    /* margin-left: 10px; */
+  }
+}
+
+/* Mobile hides avatar until we finalize mobile dropdown */
+@media (min-width: 1300px) {
+  .profile-trigger{
+    display: none;
+  }
+ 
+}
+@media(max-width: 460px){
+  #btnExport,#btnImport{
+    display: none;
+  }
+  #btnAbout{
+    margin-right: 20px;
+  }
+ } 
+body{
+  min-width: 270px;
+}

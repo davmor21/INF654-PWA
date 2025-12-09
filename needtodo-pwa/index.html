@@ -23,11 +23,19 @@
           <li><a id="btnExport" href="#!">Export</a></li>
           <li><a id="btnImport" href="#importModal" class="modal-trigger">Import</a></li>
           <li><a id="btnAbout" href="#aboutModal" class="modal-trigger">About</a></li>
+          <li id="profileMenuTrigger" class="profile-trigger">
+            <img id="profilePic" src="img/default-user.png" alt="User" class="profile-img">
+          </li>
+
         </ul>
+      </div>
+      <div id="authBar" class="auth-bar">
+          <button id="btnSignIn" class="btn orange darken-1">Sign In</button>
+          <button id="btnSignOut" class="btn grey darken-4">Sign Out</button>
+          <span id="authUser" class="grey-text"></span>
       </div>
     </nav>
   </header>
-
   <main class="container" style="margin-top: 1.2rem;">
     <!-- Tabs -->
     <ul id="tabs" class="tabs">
@@ -147,15 +155,21 @@
   <script src="js/ui.js"></script>
   <script src="js/app.js"></script>
   <script src="js/sw-register.js"></script>
-  <!-- FireBase -->
-  <script src="js/firebase-config.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
-  <!-- firebase keys -->
+<!-- FireBase -->
+<script src="js/firebase-config.js"></script>
 
-  <!-- IndexedDB, Firebase CRUD, and Sync router -->
-  <script src="js/idb-store.js"></script>
-  <script src="js/firebase-live.js"></script>
-  <script src="js/data-sync.js"></script>
+<!-- Firebase Core -->
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+
+<!-- Firebase Auth -->
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+
+<!-- Firebase Firestore -->
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+<!-- IndexedDB, Firebase CRUD, and Sync router -->
+<script src="js/idb-store.js"></script>
+<script src="js/firebase-live.js"></script>
+<script src="js/data-sync.js"></script>
 </body>
 </html>
