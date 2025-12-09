@@ -121,7 +121,7 @@ nav {
 }
 
 /* Desktop: put name + buttons in top-right of the navbar */
-@media (min-width: 1400px) {
+@media (min-width: 1300px) {
   .auth-bar {
     position: absolute;
     right: 16px;
